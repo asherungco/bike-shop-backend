@@ -14,10 +14,11 @@ import {
 } from "../controllers/bookingController.js";
 
 const router = Router();
-router.use(requireAuth);
 
 router.get("/services", asyncHandler(listServices));
 router.get("/slots", asyncHandler(listAvailableSlots));
+
+router.use(requireAuth);
 router.get("/", asyncHandler(listBookings));
 router.post("/", requireCustomer, validateBody(bookingSchema), asyncHandler(createRepairBooking));
 router.patch("/:id/cancel", asyncHandler(cancelBooking));
