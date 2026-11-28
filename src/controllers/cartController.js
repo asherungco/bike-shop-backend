@@ -1,6 +1,52 @@
 import { supabase } from "../config/supabase.js";
 import { AppError } from "../utils/appError.js";
 
+async function ensureCartEditable(userId) {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("sales_channel", "online")
+    .eq("status", "pending_payment")
+    .gt("expires_at", new Date().toISOString())
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new AppError(500, "Could not check your pending checkout.");
+  if (data) {
+    throw new AppError(409, "Your cart is locked while a payment is pending. Finish or wait for that payment to expire before changing your cart.");
+  }
+}
+
+async function getAvailableStock(productId, stockQty) {
+  const { data: pendingOrders, error: ordersError } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("sales_channel", "online")
+    .eq("status", "pending_payment")
+    .gt("expires_at", new Date().toISOString());
+
+  if (ordersError) throw new AppError(500, "Could not check reserved stock.");
+
+  const orderIds = (pendingOrders || []).map((order) => order.id);
+  if (!orderIds.length) return Number(stockQty || 0);
+
+  const { data: reservations, error: reservationsError } = await supabase
+    .from("order_items")
+    .select("quantity")
+    .eq("product_id", productId)
+    .in("order_id", orderIds);
+
+  if (reservationsError) throw new AppError(500, "Could not check reserved stock.");
+
+  const reserved = (reservations || []).reduce(
+    (total, item) => total + Number(item.quantity || 0),
+    0
+  );
+
+  return Math.max(0, Number(stockQty || 0) - reserved);
+}
+
 async function getOrCreateCart(userId) {
   const { data, error } = await supabase
     .from("carts")
@@ -65,6 +111,7 @@ export async function getCart(req, res) {
 }
 
 export async function addCartItem(req, res) {
+  await ensureCartEditable(req.user.id);
   const { product_id, quantity } = req.validatedBody;
   const { data: product, error: productError } = await supabase
     .from("products")
@@ -77,7 +124,6 @@ export async function addCartItem(req, res) {
     throw new AppError(500, "Could not check product availability.");
   }
   if (!product || !product.is_active) throw new AppError(404, "Product not found or inactive.");
-  if (product.stock_qty < quantity) throw new AppError(409, "Not enough stock for that quantity.");
 
   const cartId = await getOrCreateCart(req.user.id);
   const { data: existing, error: existingError } = await supabase
@@ -93,8 +139,9 @@ export async function addCartItem(req, res) {
   }
 
   const nextQuantity = (existing?.quantity || 0) + quantity;
-  if (nextQuantity > product.stock_qty) {
-    throw new AppError(409, "Cart quantity exceeds available stock.");
+  const availableStock = await getAvailableStock(product_id, product.stock_qty);
+  if (nextQuantity > availableStock) {
+    throw new AppError(409, `Only ${availableStock} unit(s) are currently available after pending checkouts.`);
   }
 
   const query = existing
@@ -112,6 +159,7 @@ export async function addCartItem(req, res) {
 }
 
 export async function updateCartItem(req, res) {
+  await ensureCartEditable(req.user.id);
   const { quantity } = req.validatedBody;
   const { data: cart, error: cartError } = await supabase
     .from("carts").select("id").eq("user_id", req.user.id).maybeSingle();
@@ -131,7 +179,10 @@ export async function updateCartItem(req, res) {
 
   if (productError) throw new AppError(500, "Could not check product stock.");
   if (!product || !product.is_active) throw new AppError(404, "Product is no longer available.");
-  if (quantity > product.stock_qty) throw new AppError(409, "Requested quantity exceeds available stock.");
+  const availableStock = await getAvailableStock(item.product_id, product.stock_qty);
+  if (quantity > availableStock) {
+    throw new AppError(409, `Only ${availableStock} unit(s) are currently available after pending checkouts.`);
+  }
 
   const { error } = await supabase.from("cart_items").update({ quantity }).eq("id", item.id);
   if (error) {
@@ -144,6 +195,7 @@ export async function updateCartItem(req, res) {
 }
 
 export async function removeCartItem(req, res) {
+  await ensureCartEditable(req.user.id);
   const { data: cart, error: cartError } = await supabase
     .from("carts").select("id").eq("user_id", req.user.id).maybeSingle();
 
@@ -168,6 +220,7 @@ export async function removeCartItem(req, res) {
 }
 
 export async function clearCart(req, res) {
+  await ensureCartEditable(req.user.id);
   const { data: cart, error: cartError } = await supabase
     .from("carts").select("id").eq("user_id", req.user.id).maybeSingle();
 
