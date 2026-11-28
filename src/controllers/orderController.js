@@ -44,7 +44,7 @@ export async function listCustomerOrders(req, res) {
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit || "20", 10)));
   let query = supabase
     .from("orders")
-    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url)", { count: "exact" })
+    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url),order_status_history(id,from_status,to_status,actor_role,created_at)", { count: "exact" })
     .order("created_at", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 
