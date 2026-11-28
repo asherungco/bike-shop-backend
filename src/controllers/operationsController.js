@@ -153,3 +153,21 @@ export async function listCustomers(_req, res) {
 
   res.json({ success: true, data });
 }
+
+export async function markOrderRefundCompleted(req, res) {
+  const { data, error } = await supabase.rpc("mark_order_refund_completed", {
+    p_payment_id: req.params.paymentId,
+    p_actor_id: req.user.id,
+    p_actor_role: req.user.role
+  });
+
+  if (error) {
+    console.error("MARK ORDER REFUND COMPLETED ERROR:", error);
+    if (String(error.message || "").includes("REFUND_NOT_PENDING")) {
+      throw new AppError(409, "This payment does not have a pending refund.");
+    }
+    throw new AppError(400, "Could not mark the refund as completed.");
+  }
+
+  res.json({ success: true, message: "Refund marked as completed.", data });
+}
