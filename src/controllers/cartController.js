@@ -1,7 +1,7 @@
 import { supabase } from "../config/supabase.js";
 import { AppError } from "../utils/appError.js";
 
-async function ensureCartEditable(userId) {
+async function getActivePendingCheckout(userId) {
   const { data, error } = await supabase
     .from("orders")
     .select("id")
@@ -13,7 +13,12 @@ async function ensureCartEditable(userId) {
     .maybeSingle();
 
   if (error) throw new AppError(500, "Could not check your pending checkout.");
-  if (data) {
+  return data;
+}
+
+async function ensureCartEditable(userId) {
+  const pendingOrder = await getActivePendingCheckout(userId);
+  if (pendingOrder) {
     throw new AppError(409, "Your cart is locked while a payment is pending. Finish or wait for that payment to expire before changing your cart.");
   }
 }
@@ -73,8 +78,11 @@ async function loadCart(userId) {
     throw new AppError(500, "Could not retrieve your cart.");
   }
 
+  const pendingOrder = await getActivePendingCheckout(userId);
+  const cartLocked = Boolean(pendingOrder);
+
   if (!cart) {
-    return { id: null, items: [], item_count: 0, subtotal_centavos: 0, currency: "PHP" };
+    return { id: null, items: [], item_count: 0, subtotal_centavos: 0, currency: "PHP", cart_locked: cartLocked };
   }
 
   const { data: items, error: itemsError } = await supabase
@@ -102,6 +110,7 @@ async function loadCart(userId) {
     item_count: safeItems.reduce((sum, item) => sum + item.quantity, 0),
     subtotal_centavos: safeItems.reduce((sum, item) => sum + item.line_total_centavos, 0),
     currency: "PHP",
+    cart_locked: cartLocked,
     updated_at: cart.updated_at
   };
 }
