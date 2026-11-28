@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import { validateBody } from "../middleware/validate.js";
 import { getRecommendations } from "../controllers/aiController.js";
