@@ -17,8 +17,6 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
     throw new AppError(401, "Invalid or expired token.");
   }
 
-  // Re-read the account on every request so disabled/deleted users and
-  // changed roles do not retain access through an old JWT.
   const { data: user, error } = await supabase
     .from("users")
     .select("id,email,full_name,role")
@@ -33,8 +31,18 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
 });
 
 export const allowRoles = (...roles) => (req, _res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
+  if (!req.user || (req.user.role !== "admin" && !roles.includes(req.user.role))) {
     return next(new AppError(403, "You do not have permission to perform this action."));
+  }
+  next();
+};
+
+export const requireCustomer = (req, _res, next) => {
+  if (!req.user) {
+    return next(new AppError(401, "Authentication is required."));
+  }
+  if (req.user.role !== "customer") {
+    return next(new AppError(403, "This action is only available to customers."));
   }
   next();
 };
