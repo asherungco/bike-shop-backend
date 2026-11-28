@@ -138,3 +138,18 @@ export async function adjustStock(req, res) {
     data
   });
 }
+
+export async function listCustomers(_req, res) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,full_name,email")
+    .eq("role", "customer")
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    console.error("LIST POS CUSTOMERS ERROR:", error);
+    throw new AppError(500, "Could not retrieve customers for the POS sale.");
+  }
+
+  res.json({ success: true, data });
+}
