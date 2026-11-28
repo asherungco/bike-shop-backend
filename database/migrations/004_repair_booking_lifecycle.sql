@@ -14,6 +14,8 @@ set status = 'pending',
 from public.service_slots s
 where b.slot_id = s.id and b.status = 'held';
 
+alter table public.bookings alter column status set default 'pending';
+
 alter table public.bookings drop constraint if exists bookings_status_check;
 alter table public.bookings add constraint bookings_status_check
   check (status = any (array['pending','confirmed','in_repair','ready_for_pickup','completed','cancelled','expired']::text[]));
