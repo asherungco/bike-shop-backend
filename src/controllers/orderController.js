@@ -99,15 +99,15 @@ export async function getOrder(req, res) {
 export async function cancelCustomerOrder(req, res) {
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id,status")
+    .select("id,status,sales_channel")
     .eq("id", req.params.id)
     .eq("user_id", req.user.id)
     .maybeSingle();
 
   if (orderError) throw new AppError(500, "Could not load your order.");
   if (!order) throw new AppError(404, "Order not found.");
-  if (order.status !== "paid") {
-    throw new AppError(409, "You can only cancel an order before staff starts processing it.");
+  if (order.status !== "paid" || order.sales_channel !== "online") {
+    throw new AppError(409, "You can only cancel an online order before staff starts processing it.");
   }
 
   const { error } = await supabase.rpc("cancel_order", {
