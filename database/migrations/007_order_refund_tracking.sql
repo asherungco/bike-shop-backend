@@ -95,8 +95,7 @@ begin
     where id = v_order.coupon_id;
   end if;
 end;
-$function$
-
+$function$;
 
 create or replace function public.mark_order_refund_completed(
   p_payment_id uuid,
