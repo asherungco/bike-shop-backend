@@ -51,7 +51,7 @@ export async function listOrders(req, res) {
 
   let query = supabase
     .from("orders")
-    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),users!orders_user_id_fkey(id,full_name,email)", {
+    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency),users!orders_user_id_fkey(id,full_name,email)", {
       count: "exact"
     })
     .order("created_at", { ascending: false })
