@@ -6,7 +6,8 @@ import { checkoutSchema } from "../validators/orderSchemas.js";
 import {
   checkout,
   listCustomerOrders,
-  getOrder
+  getOrder,
+  cancelCustomerOrder
 } from "../controllers/orderController.js";
 
 const router = Router();
@@ -24,6 +25,12 @@ router.get(
   "/",
   allowRoles("customer", "admin", "employee", "mechanic"),
   asyncHandler(listCustomerOrders)
+);
+
+router.post(
+  "/:id/cancel",
+  requireCustomer,
+  asyncHandler(cancelCustomerOrder)
 );
 
 router.get(
