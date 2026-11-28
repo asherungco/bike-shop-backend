@@ -33,9 +33,10 @@ create table if not exists public.booking_status_history (
   actor_role text,
   created_at timestamptz not null default now()
 );
-create index if not exists bookings_slot_status_idx on public.bookings(slot_id, status);
 create index if not exists booking_status_history_booking_created_idx
   on public.booking_status_history(booking_id, created_at desc);
+create index if not exists booking_status_history_actor_id_idx
+  on public.booking_status_history(actor_id);
 alter table public.booking_status_history enable row level security;
 
 create or replace function public.create_repair_booking(
