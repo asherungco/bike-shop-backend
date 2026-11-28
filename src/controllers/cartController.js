@@ -96,13 +96,51 @@ async function loadCart(userId) {
     throw new AppError(500, "Could not retrieve cart items.");
   }
 
-  const safeItems = (items || []).map((item) => ({
-    id: item.id,
-    product_id: item.product_id,
-    quantity: item.quantity,
-    product: item.products,
-    line_total_centavos: (item.products?.price_centavos || 0) * item.quantity
-  }));
+  const productIds = (items || []).map((item) => item.product_id);
+  const { data: activeOrders, error: activeOrdersError } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("sales_channel", "online")
+    .eq("status", "pending_payment")
+    .gt("expires_at", new Date().toISOString());
+
+  if (activeOrdersError) throw new AppError(500, "Could not check reserved product stock.");
+
+  const activeOrderIds = (activeOrders || []).map((order) => order.id);
+  let reservations = [];
+  if (productIds.length && activeOrderIds.length) {
+    const { data, error } = await supabase
+      .from("order_items")
+      .select("product_id,quantity")
+      .in("product_id", productIds)
+      .in("order_id", activeOrderIds);
+
+    if (error) throw new AppError(500, "Could not check reserved product stock.");
+    reservations = data || [];
+  }
+
+  const reservedByProduct = new Map();
+  for (const reservation of reservations) {
+    reservedByProduct.set(
+      reservation.product_id,
+      (reservedByProduct.get(reservation.product_id) || 0) + Number(reservation.quantity || 0)
+    );
+  }
+
+  const safeItems = (items || []).map((item) => {
+    const stockQty = Number(item.products?.stock_qty || 0);
+    const reservedQty = reservedByProduct.get(item.product_id) || 0;
+    return {
+      id: item.id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      product: {
+        ...(item.products || {}),
+        available_stock_qty: Math.max(0, stockQty - reservedQty)
+      },
+      line_total_centavos: (item.products?.price_centavos || 0) * item.quantity
+    };
+  });
 
   return {
     id: cart.id,
