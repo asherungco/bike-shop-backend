@@ -10,6 +10,9 @@ alter table public.payments
   add constraint payments_refund_status_check
   check (refund_status = any (array['not_required','pending','refunded']::text[]));
 
+create index if not exists payments_refund_completed_by_idx
+  on public.payments(refund_completed_by);
+
 CREATE OR REPLACE FUNCTION public.cancel_order(p_order_id uuid, p_actor_id uuid, p_actor_role text)
  RETURNS void
  LANGUAGE plpgsql
