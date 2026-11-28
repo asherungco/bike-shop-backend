@@ -1,0 +1,21 @@
+{
+  "info": {
+    "name": "Bike Shop Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "token", "value": "PASTE_JWT_HERE" },
+    { "key": "productId", "value": "PASTE_PRODUCT_UUID" },
+    { "key": "customerId", "value": "PASTE_CUSTOMER_UUID" },
+    { "key": "orderId", "value": "PASTE_ORDER_UUID" }
+  ],
+  "item": [
+    { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
+    { "name": "List products", "request": { "method": "GET", "url": "{{baseUrl}}/products" } },
+    { "name": "List inventory", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/inventory" } },
+    { "name": "Create POS sale", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"customer_id\": \"{{customerId}}\",\n  \"fulfillment_type\": \"store_pickup\",\n  \"notes\": \"Demo counter sale\",\n  \"items\": [{ \"product_id\": \"{{productId}}\", \"quantity\": 1 }]\n}" }, "url": "{{baseUrl}}/pos/sales" } },
+    { "name": "List orders", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/orders" } },
+    { "name": "Update order status", "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"processing\"\n}" }, "url": "{{baseUrl}}/orders/{{orderId}}/status" } }
+  ]
+}

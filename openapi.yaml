@@ -1,0 +1,105 @@
+openapi: 3.0.3
+info:
+  title: Bike Shop REST API
+  version: 1.0.0
+  description: Backend API for the bike shop storefront, employee POS, and inventory operations.
+servers:
+  - url: http://localhost:5000/api
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+    PosSale:
+      type: object
+      required: [customer_id, items]
+      properties:
+        customer_id: { type: string, format: uuid }
+        fulfillment_type: { type: string, enum: [store_pickup, delivery] }
+        notes: { type: string, maxLength: 500 }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [product_id, quantity]
+            properties:
+              product_id: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1, maximum: 100 }
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: API is running }
+  /orders:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List orders (customers see their own; staff see all)
+      responses:
+        '200': { description: Paginated orders }
+  /orders/{id}/status:
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Advance or cancel an order (staff only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [processing, ready, completed, cancelled] }
+      responses:
+        '200': { description: Updated order }
+        '403': { description: Wrong role }
+        '409': { description: Invalid status transition }
+  /pos/sales:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Complete a cash POS sale (admin or mechanic)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PosSale' }
+      responses:
+        '201': { description: Sale created and stock decremented atomically }
+        '409': { description: Insufficient stock }
+  /inventory:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List stock (admin or mechanic)
+      responses:
+        '200': { description: Inventory and stock summary }
+  /inventory/adjust:
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Set product stock (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id, new_qty, reason]
+              properties:
+                product_id: { type: string, format: uuid }
+                new_qty: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 3, maxLength: 250 }
+      responses:
+        '200': { description: Stock adjusted and audit row recorded }
+        '403': { description: Admin role required }
