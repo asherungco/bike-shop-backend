@@ -6,6 +6,7 @@ function handleCheckoutError(error) {
   const message = String(error?.message || "");
 
   if (message.includes("CART_EMPTY")) throw new AppError(400, "Your cart is empty.");
+  if (message.includes("PENDING_CHECKOUT_EXISTS")) throw new AppError(409, "You already have a payment waiting. Finish it or wait for it to expire before starting another checkout.");
   if (message.includes("INSUFFICIENT_STOCK")) throw new AppError(409, "One or more products no longer have enough stock.");
   if (message.includes("PRODUCT_UNAVAILABLE")) throw new AppError(409, "One or more products are no longer available.");
   if (message.includes("SHIPPING_DETAILS_REQUIRED")) throw new AppError(400, "Name, phone, address, and city are required for delivery.");
@@ -79,4 +80,35 @@ export async function getOrder(req, res) {
   if (!data) throw new AppError(404, "Order not found.");
 
   res.json({ success: true, data });
+}
+
+export async function cancelCustomerOrder(req, res) {
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id,status")
+    .eq("id", req.params.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+
+  if (orderError) throw new AppError(500, "Could not load your order.");
+  if (!order) throw new AppError(404, "Order not found.");
+  if (order.status !== "paid") {
+    throw new AppError(409, "You can only cancel an order before staff starts processing it.");
+  }
+
+  const { error } = await supabase.rpc("cancel_order", {
+    p_order_id: order.id,
+    p_actor_id: req.user.id,
+    p_actor_role: "customer"
+  });
+
+  if (error) {
+    console.error("CUSTOMER CANCEL ORDER ERROR:", error);
+    if (String(error.message || "").includes("INVALID_TRANSITION")) {
+      throw new AppError(409, "This order can no longer be cancelled.");
+    }
+    throw new AppError(400, "Could not cancel this order.");
+  }
+
+  res.json({ success: true, message: "Order cancelled successfully." });
 }
