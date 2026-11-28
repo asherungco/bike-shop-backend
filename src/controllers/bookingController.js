@@ -71,7 +71,7 @@ export async function listAvailableSlots(req, res) {
 
   const slots = (data || []).map((slot) => {
     const taken = (slot.bookings || []).filter((booking) =>
-      ["pending", "confirmed", "in_repair", "ready_for_pickup"].includes(booking.status)
+      ["held", "pending", "confirmed", "in_repair", "ready_for_pickup"].includes(booking.status)
     ).length;
     const { bookings, ...slotData } = slot;
     return { ...slotData, booked_count: taken, available_count: Math.max(0, slot.capacity - taken), is_available: taken < slot.capacity };
