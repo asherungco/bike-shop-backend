@@ -14,11 +14,11 @@ set status = 'pending',
 from public.service_slots s
 where b.slot_id = s.id and b.status = 'held';
 
-alter table public.bookings alter column status set default 'pending';
+alter table public.bookings alter column status set default 'held';
 
 alter table public.bookings drop constraint if exists bookings_status_check;
 alter table public.bookings add constraint bookings_status_check
-  check (status = any (array['pending','confirmed','in_repair','ready_for_pickup','completed','cancelled','expired']::text[]));
+  check (status = any (array['held','pending','confirmed','in_repair','ready_for_pickup','completed','cancelled','expired']::text[]));
 alter table public.bookings add constraint bookings_final_cost_check
   check (final_cost_centavos is null or final_cost_centavos >= 0);
 alter table public.bookings add constraint bookings_payment_status_check
@@ -76,7 +76,7 @@ begin
   end if;
 
   select count(*) into v_taken from public.bookings
-  where slot_id = p_slot_id and status in ('pending','confirmed','in_repair','ready_for_pickup');
+  where slot_id = p_slot_id and status in ('held','pending','confirmed','in_repair','ready_for_pickup');
   if v_taken >= v_slot.capacity then raise exception 'SLOT_FULL'; end if;
 
   insert into public.bookings (
@@ -118,7 +118,7 @@ begin
   select * into v_booking from public.bookings where id = p_booking_id for update;
   if not found then raise exception 'BOOKING_NOT_FOUND'; end if;
 
-  if p_new_status = 'confirmed' and v_booking.status = 'pending' then
+  if p_new_status = 'confirmed' and v_booking.status in ('pending','held') then
     null;
   elsif p_new_status = 'in_repair' and v_booking.status = 'confirmed' then
     null;
@@ -161,9 +161,9 @@ begin
   if not found then raise exception 'BOOKING_NOT_FOUND'; end if;
 
   if p_actor_role = 'customer' then
-    if v_booking.user_id <> p_actor_id or v_booking.status not in ('pending','confirmed') then raise exception 'INVALID_BOOKING_TRANSITION'; end if;
+    if v_booking.user_id <> p_actor_id or v_booking.status not in ('held','pending','confirmed') then raise exception 'INVALID_BOOKING_TRANSITION'; end if;
   elsif p_actor_role in ('admin','employee','mechanic') then
-    if v_booking.status not in ('pending','confirmed') then raise exception 'INVALID_BOOKING_TRANSITION'; end if;
+    if v_booking.status not in ('held','pending','confirmed') then raise exception 'INVALID_BOOKING_TRANSITION'; end if;
   else
     raise exception 'FORBIDDEN';
   end if;
