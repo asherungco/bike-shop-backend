@@ -7,9 +7,9 @@ import { createPosSale, listOrders, updateOrderStatus, listInventory, adjustStoc
 
 const router = Router();
 router.use(requireAuth);
-router.get("/orders", asyncHandler(listOrders));
-router.patch("/orders/:id/status", allowRoles("admin", "mechanic"), validateBody(orderStatusSchema), asyncHandler(updateOrderStatus));
-router.post("/pos/sales", allowRoles("admin", "mechanic"), validateBody(posSaleSchema), asyncHandler(createPosSale));
-router.get("/inventory", allowRoles("admin", "mechanic"), asyncHandler(listInventory));
+router.get("/orders", allowRoles("admin", "employee", "mechanic"), asyncHandler(listOrders));
+router.patch("/orders/:id/status", allowRoles("admin", "employee", "mechanic"), validateBody(orderStatusSchema), asyncHandler(updateOrderStatus));
+router.post("/pos/sales", allowRoles("admin", "employee", "mechanic"), validateBody(posSaleSchema), asyncHandler(createPosSale));
+router.get("/inventory", allowRoles("admin", "employee", "mechanic"), asyncHandler(listInventory));
 router.patch("/inventory/adjust", allowRoles("admin"), validateBody(stockAdjustmentSchema), asyncHandler(adjustStock));
 export default router;
