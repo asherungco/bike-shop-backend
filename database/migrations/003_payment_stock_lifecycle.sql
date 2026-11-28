@@ -335,7 +335,7 @@ begin
   if not found then raise exception 'ORDER_NOT_FOUND'; end if;
 
   if p_actor_role = 'customer' then
-    if v_order.user_id <> p_actor_id or v_order.status <> 'paid' then
+    if v_order.user_id <> p_actor_id or v_order.status <> 'paid' or v_order.sales_channel <> 'online' then
       raise exception 'INVALID_TRANSITION';
     end if;
   elsif p_actor_role in ('admin', 'employee', 'mechanic') then
