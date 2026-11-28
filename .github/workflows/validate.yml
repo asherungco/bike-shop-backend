@@ -1,0 +1,21 @@
+name: Backend validation
+
+on:
+  push:
+    branches: [main, feature/customer-shopping-flow]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Check all backend JavaScript files
+        run: find src -type f -name '*.js' -exec node --check {} \;

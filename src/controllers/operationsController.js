@@ -51,7 +51,7 @@ export async function listOrders(req, res) {
 
   let query = supabase
     .from("orders")
-    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),users!orders_user_id_fkey(id,full_name,email)", {
+    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,refund_status),users!orders_user_id_fkey(id,full_name,email)", {
       count: "exact"
     })
     .order("created_at", { ascending: false })
@@ -137,4 +137,37 @@ export async function adjustStock(req, res) {
     message: "Stock updated and adjustment recorded.",
     data
   });
+}
+
+export async function listCustomers(_req, res) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,full_name,email")
+    .eq("role", "customer")
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    console.error("LIST POS CUSTOMERS ERROR:", error);
+    throw new AppError(500, "Could not retrieve customers for the POS sale.");
+  }
+
+  res.json({ success: true, data });
+}
+
+export async function markOrderRefundCompleted(req, res) {
+  const { data, error } = await supabase.rpc("mark_order_refund_completed", {
+    p_payment_id: req.params.paymentId,
+    p_actor_id: req.user.id,
+    p_actor_role: req.user.role
+  });
+
+  if (error) {
+    console.error("MARK ORDER REFUND COMPLETED ERROR:", error);
+    if (String(error.message || "").includes("REFUND_NOT_PENDING")) {
+      throw new AppError(409, "This payment does not have a pending refund.");
+    }
+    throw new AppError(400, "Could not mark the refund as completed.");
+  }
+
+  res.json({ success: true, message: "Refund marked as completed.", data });
 }

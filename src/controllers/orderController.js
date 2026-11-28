@@ -6,6 +6,7 @@ function handleCheckoutError(error) {
   const message = String(error?.message || "");
 
   if (message.includes("CART_EMPTY")) throw new AppError(400, "Your cart is empty.");
+  if (message.includes("PENDING_CHECKOUT_EXISTS")) throw new AppError(409, "You already have a payment waiting. Finish it or wait for it to expire before starting another checkout.");
   if (message.includes("INSUFFICIENT_STOCK")) throw new AppError(409, "One or more products no longer have enough stock.");
   if (message.includes("PRODUCT_UNAVAILABLE")) throw new AppError(409, "One or more products are no longer available.");
   if (message.includes("SHIPPING_DETAILS_REQUIRED")) throw new AppError(400, "Name, phone, address, and city are required for delivery.");
@@ -39,11 +40,18 @@ export async function checkout(req, res) {
 }
 
 export async function listCustomerOrders(req, res) {
+  if (req.user.role === "customer") {
+    const { error: expiryError } = await supabase.rpc("expire_pending_online_orders", {
+      p_user_id: req.user.id
+    });
+    if (expiryError) console.error("EXPIRE CUSTOMER ORDERS ERROR:", expiryError);
+  }
+
   const page = Math.max(1, Number.parseInt(req.query.page || "1", 10));
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit || "20", 10)));
   let query = supabase
     .from("orders")
-    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url)", { count: "exact" })
+    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url,refund_status),order_status_history(id,from_status,to_status,actor_role,created_at)", { count: "exact" })
     .order("created_at", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 
@@ -64,9 +72,16 @@ export async function listCustomerOrders(req, res) {
 }
 
 export async function getOrder(req, res) {
+  if (req.user.role === "customer") {
+    const { error: expiryError } = await supabase.rpc("expire_pending_online_orders", {
+      p_user_id: req.user.id
+    });
+    if (expiryError) console.error("EXPIRE CUSTOMER ORDER ERROR:", expiryError);
+  }
+
   let query = supabase
     .from("orders")
-    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url),order_status_history(id,from_status,to_status,actor_role,created_at)")
+    .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url,refund_status),order_status_history(id,from_status,to_status,actor_role,created_at)")
     .eq("id", req.params.id);
 
   if (req.user.role === "customer") query = query.eq("user_id", req.user.id);
@@ -79,4 +94,35 @@ export async function getOrder(req, res) {
   if (!data) throw new AppError(404, "Order not found.");
 
   res.json({ success: true, data });
+}
+
+export async function cancelCustomerOrder(req, res) {
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id,status,sales_channel")
+    .eq("id", req.params.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+
+  if (orderError) throw new AppError(500, "Could not load your order.");
+  if (!order) throw new AppError(404, "Order not found.");
+  if (order.status !== "paid" || order.sales_channel !== "online") {
+    throw new AppError(409, "You can only cancel an online order before staff starts processing it.");
+  }
+
+  const { error } = await supabase.rpc("cancel_order", {
+    p_order_id: order.id,
+    p_actor_id: req.user.id,
+    p_actor_role: "customer"
+  });
+
+  if (error) {
+    console.error("CUSTOMER CANCEL ORDER ERROR:", error);
+    if (String(error.message || "").includes("INVALID_TRANSITION")) {
+      throw new AppError(409, "This order can no longer be cancelled.");
+    }
+    throw new AppError(400, "Could not cancel this order.");
+  }
+
+  res.json({ success: true, message: "Order cancelled successfully." });
 }

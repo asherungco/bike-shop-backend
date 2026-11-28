@@ -1,13 +1,20 @@
 import { supabase } from "../config/supabase.js";
 import { AppError } from "../utils/appError.js";
 
-const ACTIVE_BOOKING_STATUSES = ["confirmed", "held"];
-
 function mapBookingError(error) {
   const message = String(error?.message || "");
   if (message.includes("SLOT_NOT_FOUND")) throw new AppError(404, "The selected appointment slot was not found.");
   if (message.includes("SLOT_CLOSED")) throw new AppError(409, "This appointment slot is already closed for booking.");
   if (message.includes("SLOT_FULL")) throw new AppError(409, "This appointment slot is already full.");
+  if (message.includes("BIKE_DETAILS_REQUIRED")) throw new AppError(400, "Please enter your bike details.");
+  if (message.includes("PROBLEM_DESCRIPTION_REQUIRED")) throw new AppError(400, "Please describe the bike problem in at least 10 characters.");
+  if (message.includes("BIKE_NOT_FOUND")) throw new AppError(404, "The selected bike was not found in your account.");
+  if (message.includes("SERVICE_UNAVAILABLE")) throw new AppError(409, "This repair service is currently unavailable.");
+  if (message.includes("FINAL_COST_REQUIRED")) throw new AppError(400, "Enter the final repair cost before marking the repair ready.");
+  if (message.includes("REPAIR_PAYMENT_REQUIRED")) throw new AppError(409, "Record the repair payment before completing this booking.");
+  if (message.includes("REPAIR_NOT_READY_FOR_PAYMENT")) throw new AppError(409, "This repair is not ready for payment yet.");
+  if (message.includes("INVALID_BOOKING_TRANSITION")) throw new AppError(409, "That repair booking status change is not allowed.");
+  if (message.includes("BOOKING_NOT_FOUND")) throw new AppError(404, "Repair booking not found.");
   if (message.includes("permission denied") || message.includes("not authorized")) {
     throw new AppError(500, "Booking is not enabled on the database yet. The booking function needs permission for the backend service role.");
   }
@@ -64,8 +71,7 @@ export async function listAvailableSlots(req, res) {
 
   const slots = (data || []).map((slot) => {
     const taken = (slot.bookings || []).filter((booking) =>
-      booking.status === "confirmed" ||
-      (booking.status === "held" && new Date(booking.held_until).getTime() > now.getTime())
+      ["held", "pending", "confirmed", "in_repair", "ready_for_pickup"].includes(booking.status)
     ).length;
     const { bookings, ...slotData } = slot;
     return { ...slotData, booked_count: taken, available_count: Math.max(0, slot.capacity - taken), is_available: taken < slot.capacity };
@@ -74,47 +80,35 @@ export async function listAvailableSlots(req, res) {
   res.json({ success: true, data: slots });
 }
 
-export async function createBookingHold(req, res) {
-  const userId = req.user.id;
-  const { slot_id: slotId, bike_id: bikeId = null } = req.validatedBody;
+export async function createRepairBooking(req, res) {
+  const { slot_id: slotId, bike_id: bikeId = null, bike_description: bikeDescription, problem_description: problemDescription } = req.validatedBody;
 
-  if (bikeId) {
-    const { data: bike, error: bikeError } = await supabase
-      .from("bikes")
-      .select("id")
-      .eq("id", bikeId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (bikeError) {
-      console.error("CHECK BIKE OWNERSHIP ERROR:", bikeError);
-      throw new AppError(500, "Could not verify the selected bike.");
-    }
-    if (!bike) throw new AppError(404, "The selected bike was not found in your account.");
-  }
-
-  const { data: bookingId, error } = await supabase.rpc("create_booking_hold", {
+  const { data: bookingId, error } = await supabase.rpc("create_repair_booking", {
     p_slot_id: slotId,
-    p_user_id: userId,
+    p_user_id: req.user.id,
     p_bike_id: bikeId,
-    p_hold_minutes: 10,
-    p_cutoff_hours: 2
+    p_bike_description: bikeDescription,
+    p_problem_description: problemDescription
   });
 
   if (error) mapBookingError(error);
 
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id,slot_id,user_id,bike_id,status,held_until,created_at,service_slots(id,starts_at,service_types(id,name,duration_minutes,price_centavos))")
+    .select("id,slot_id,user_id,bike_id,status,held_until,created_at,bike_description,problem_description,final_cost_centavos,payment_status,payment_method,service_slots(id,starts_at,service_types(id,name,duration_minutes,price_centavos))")
     .eq("id", bookingId)
     .single();
 
   if (fetchError) {
-    console.error("FETCH NEW BOOKING ERROR:", fetchError);
-    throw new AppError(500, "Your appointment hold was created, but its details could not be loaded.");
+    console.error("FETCH NEW REPAIR BOOKING ERROR:", fetchError);
+    throw new AppError(500, "Your repair booking was created, but its details could not be loaded.");
   }
 
-  res.status(201).json({ success: true, message: "Appointment slot held for 10 minutes. Complete the next checkout step before the hold expires.", data: booking });
+  res.status(201).json({
+    success: true,
+    message: "Repair appointment submitted. The shop will review and confirm it.",
+    data: booking
+  });
 }
 
 export async function listBookings(req, res) {
@@ -123,7 +117,7 @@ export async function listBookings(req, res) {
 
   let query = supabase
     .from("bookings")
-    .select("id,slot_id,user_id,order_id,bike_id,status,held_until,created_at,service_slots(id,starts_at,service_types(id,name,duration_minutes,price_centavos)),bikes(id,nickname,wheel_size,brake_type,drivetrain_speed,frame_size),users!bookings_user_id_fkey(id,full_name,email)", { count: "exact" })
+    .select("id,slot_id,user_id,order_id,bike_id,status,held_until,created_at,bike_description,problem_description,final_cost_centavos,payment_status,payment_method,service_slots(id,starts_at,service_types(id,name,duration_minutes,price_centavos)),bikes(id,nickname,wheel_size,brake_type,drivetrain_speed,frame_size),users!bookings_user_id_fkey(id,full_name,email),booking_status_history(id,from_status,to_status,actor_role,created_at)", { count: "exact" })
     .order("created_at", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 
@@ -144,75 +138,37 @@ export async function listBookings(req, res) {
 }
 
 export async function cancelBooking(req, res) {
-  let lookup = supabase
-    .from("bookings")
-    .select("id,user_id,status,held_until")
-    .eq("id", req.params.id);
+  const { data, error } = await supabase.rpc("cancel_repair_booking", {
+    p_booking_id: req.params.id,
+    p_actor_id: req.user.id,
+    p_actor_role: req.user.role
+  });
 
-  if (req.user.role === "customer") lookup = lookup.eq("user_id", req.user.id);
-  const { data: booking, error: lookupError } = await lookup.maybeSingle();
-
-  if (lookupError) {
-    console.error("LOOKUP BOOKING ERROR:", lookupError);
-    throw new AppError(500, "Could not retrieve the booking.");
-  }
-  if (!booking) throw new AppError(404, "Booking not found.");
-  if (!ACTIVE_BOOKING_STATUSES.includes(booking.status)) throw new AppError(409, "Only held or confirmed bookings can be cancelled.");
-
-  const { data, error } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", booking.id)
-    .in("status", ACTIVE_BOOKING_STATUSES)
-    .select("id,status")
-    .maybeSingle();
-
-  if (error) {
-    console.error("CANCEL BOOKING ERROR:", error);
-    throw new AppError(500, "Could not cancel the booking.");
-  }
-  if (!data) throw new AppError(409, "The booking was changed by another request. Refresh and try again.");
-
-  res.json({ success: true, message: "Booking cancelled.", data });
+  if (error) mapBookingError(error);
+  res.json({ success: true, message: "Repair booking cancelled.", data });
 }
 
 export async function updateBookingStatus(req, res) {
-  const { status } = req.validatedBody;
-  const { data: current, error: lookupError } = await supabase
-    .from("bookings")
-    .select("id,status,held_until")
-    .eq("id", req.params.id)
-    .maybeSingle();
+  const { status, final_cost_centavos: finalCostCentavos = null } = req.validatedBody;
+  const { data, error } = await supabase.rpc("update_repair_booking_status", {
+    p_booking_id: req.params.id,
+    p_actor_id: req.user.id,
+    p_actor_role: req.user.role,
+    p_new_status: status,
+    p_final_cost_centavos: finalCostCentavos
+  });
 
-  if (lookupError) {
-    console.error("LOOKUP BOOKING STATUS ERROR:", lookupError);
-    throw new AppError(500, "Could not retrieve the booking.");
-  }
-  if (!current) throw new AppError(404, "Booking not found.");
-  if (status === "confirmed" && current.status !== "held") {
-    throw new AppError(409, "Only an active held booking can be confirmed.");
-  }
-  if (status === "confirmed" && new Date(current.held_until).getTime() <= Date.now()) {
-    await supabase.from("bookings").update({ status: "expired" }).eq("id", current.id).eq("status", "held");
-    throw new AppError(409, "The booking hold has expired. The customer must select another slot.");
-  }
-  if (status === "cancelled" && !ACTIVE_BOOKING_STATUSES.includes(current.status)) {
-    throw new AppError(409, "Only held or confirmed bookings can be cancelled.");
-  }
+  if (error) mapBookingError(error);
+  res.json({ success: true, message: `Repair booking ${status.replaceAll("_", " ")}.`, data });
+}
 
-  const { data, error } = await supabase
-    .from("bookings")
-    .update({ status })
-    .eq("id", current.id)
-    .eq("status", current.status)
-    .select("id,status")
-    .maybeSingle();
+export async function markRepairPaymentReceived(req, res) {
+  const { data, error } = await supabase.rpc("mark_repair_payment_received", {
+    p_booking_id: req.params.id,
+    p_actor_id: req.user.id,
+    p_actor_role: req.user.role
+  });
 
-  if (error) {
-    console.error("UPDATE BOOKING STATUS ERROR:", error);
-    throw new AppError(500, "Could not update the booking status.");
-  }
-  if (!data) throw new AppError(409, "The booking was changed by another request. Refresh and try again.");
-
-  res.json({ success: true, message: `Booking ${status}.`, data });
+  if (error) mapBookingError(error);
+  res.json({ success: true, message: "Repair payment recorded.", data });
 }
