@@ -20,6 +20,6 @@ router.get("/slots", asyncHandler(listAvailableSlots));
 router.get("/", asyncHandler(listBookings));
 router.post("/hold", validateBody(bookingHoldSchema), asyncHandler(createBookingHold));
 router.patch("/:id/cancel", asyncHandler(cancelBooking));
-router.patch("/:id/status", allowRoles("admin", "mechanic"), validateBody(bookingStatusSchema), asyncHandler(updateBookingStatus));
+router.patch("/:id/status", allowRoles("admin", "employee", "mechanic"), validateBody(bookingStatusSchema), asyncHandler(updateBookingStatus));
 
 export default router;
