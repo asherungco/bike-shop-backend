@@ -19,10 +19,13 @@ alter table public.bookings alter column status set default 'held';
 alter table public.bookings drop constraint if exists bookings_status_check;
 alter table public.bookings add constraint bookings_status_check
   check (status = any (array['held','pending','confirmed','in_repair','ready_for_pickup','completed','cancelled','expired']::text[]));
+alter table public.bookings drop constraint if exists bookings_final_cost_check;
 alter table public.bookings add constraint bookings_final_cost_check
   check (final_cost_centavos is null or final_cost_centavos >= 0);
+alter table public.bookings drop constraint if exists bookings_payment_status_check;
 alter table public.bookings add constraint bookings_payment_status_check
   check (payment_status = any (array['unpaid','paid']::text[]));
+alter table public.bookings drop constraint if exists bookings_payment_method_check;
 alter table public.bookings add constraint bookings_payment_method_check
   check (payment_method = any (array['cash_at_shop']::text[]));
 
