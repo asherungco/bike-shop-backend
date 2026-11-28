@@ -1,8 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { AppError } from "../utils/appError.js";
 
-const ACTIVE_BOOKING_STATUSES = ["pending", "confirmed"];
-
 function mapBookingError(error) {
   const message = String(error?.message || "");
   if (message.includes("SLOT_NOT_FOUND")) throw new AppError(404, "The selected appointment slot was not found.");
