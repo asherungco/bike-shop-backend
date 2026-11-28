@@ -6,6 +6,7 @@ alter table public.payments
   add column if not exists refund_completed_at timestamptz,
   add column if not exists refund_completed_by uuid references public.users(id);
 
+alter table public.payments drop constraint if exists payments_refund_status_check;
 alter table public.payments
   add constraint payments_refund_status_check
   check (refund_status = any (array['not_required','pending','refunded']::text[]));
