@@ -132,5 +132,4 @@ BEGIN
     'currency', 'PHP'
   );
 END
-$function$
-
+$function$;
