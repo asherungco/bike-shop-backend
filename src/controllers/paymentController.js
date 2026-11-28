@@ -241,7 +241,6 @@ export const handleMayaWebhook = async (req, res) => {
     );
   } catch (error) {
     console.error("Maya webhook verification failed:", error.message);
-
     return res.status(502).json({
       success: false,
       message: "Could not verify Maya payment notification."
@@ -249,7 +248,6 @@ export const handleMayaWebhook = async (req, res) => {
   }
 
   const status = verified.paymentStatus;
-
   const acceptedStatuses = new Set([
     "PAYMENT_SUCCESS",
     "PAYMENT_FAILED",
@@ -286,19 +284,13 @@ export const handleMayaWebhook = async (req, res) => {
     });
   }
 
-  const referenceMatches =
-    verified.requestReferenceNumber === payment.order_id;
-
-  const verifiedAmount = Math.round(
-    Number(verified.totalAmount?.value) * 100
-  );
-
+  const referenceMatches = verified.requestReferenceNumber === payment.order_id;
+  const verifiedAmount = Math.round(Number(verified.totalAmount?.value) * 100);
   const amountMatches =
     Number.isFinite(verifiedAmount) &&
     verifiedAmount === Number(payment.amount_centavos);
 
   const eventId = `${paymentId}:${status}`;
-
   const { error: eventError } = await supabase
     .from("webhook_events")
     .upsert(
@@ -341,53 +333,63 @@ export const handleMayaWebhook = async (req, res) => {
     });
   }
 
-  const localStatus =
-    status === "PAYMENT_SUCCESS"
-      ? "paid"
-      : status === "PAYMENT_EXPIRED"
-        ? "expired"
-        : "failed";
-
-  const { error: updatePaymentError } = await supabase
-    .from("payments")
-    .update({
-      status: localStatus,
-      amount_mismatch: false
-    })
-    .eq("id", payment.id);
-
-  if (updatePaymentError) {
-    return res.status(500).json({
-      success: false,
-      message: "Could not update payment status."
-    });
-  }
-
   if (status === "PAYMENT_SUCCESS") {
-    const { data: order, error: orderReadError } = await supabase
-      .from("orders")
-      .select("id, status")
-      .eq("id", payment.order_id)
-      .maybeSingle();
+    const { data: finalized, error: finalizeError } = await supabase.rpc(
+      "finalize_online_order_payment",
+      { p_order_id: payment.order_id }
+    );
 
-    if (orderReadError) {
-      return res.status(500).json({
+    if (finalizeError || !finalized?.accepted) {
+      console.error("Maya payment finalization failed:", finalizeError || finalized);
+      return res.status(409).json({
         success: false,
-        message: "Could not load order status."
+        message: "Payment was verified, but the order could not be finalized. Manual review is required."
       });
     }
 
-    if (order?.status === "pending_payment") {
-      const { error: orderUpdateError } = await supabase
-        .from("orders")
-        .update({ status: "paid" })
-        .eq("id", payment.order_id)
-        .eq("status", "pending_payment");
+    const { error: updatePaymentError } = await supabase
+      .from("payments")
+      .update({ status: "paid", amount_mismatch: false })
+      .eq("id", payment.id);
 
-      if (orderUpdateError) {
+    if (updatePaymentError) {
+      return res.status(500).json({
+        success: false,
+        message: "Payment was verified and the order was updated, but the payment record could not be updated."
+      });
+    }
+  } else {
+    const targetStatus =
+      status === "PAYMENT_EXPIRED" ? "expired" : "cancelled";
+
+    const { data: failedOrder, error: failOrderError } = await supabase.rpc(
+      "mark_online_order_payment_failed",
+      {
+        p_order_id: payment.order_id,
+        p_target_status: targetStatus
+      }
+    );
+
+    if (failOrderError) {
+      console.error("Maya failed-payment order update error:", failOrderError);
+      return res.status(500).json({
+        success: false,
+        message: "Could not update the order after the failed payment."
+      });
+    }
+
+    // Never overwrite a successful payment if a late failure event arrives.
+    if (failedOrder?.status !== "paid") {
+      const localStatus = status === "PAYMENT_EXPIRED" ? "expired" : "failed";
+      const { error: updatePaymentError } = await supabase
+        .from("payments")
+        .update({ status: localStatus, amount_mismatch: false })
+        .eq("id", payment.id);
+
+      if (updatePaymentError) {
         return res.status(500).json({
           success: false,
-          message: "Payment verified, but order status could not be updated."
+          message: "Could not update payment status."
         });
       }
     }
