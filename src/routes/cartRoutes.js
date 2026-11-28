@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, allowRoles } from "../middleware/auth.js";
+import { requireAuth, requireCustomer } from "../middleware/auth.js";
 import { validateBody } from "../middleware/validate.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { addCartItemSchema, updateCartItemSchema } from "../validators/orderSchemas.js";
@@ -8,7 +8,7 @@ import {
 } from "../controllers/cartController.js";
 
 const router = Router();
-router.use(requireAuth, allowRoles("customer"));
+router.use(requireAuth, requireCustomer);
 
 router.get("/", asyncHandler(getCart));
 router.post("/items", validateBody(addCartItemSchema), asyncHandler(addCartItem));
