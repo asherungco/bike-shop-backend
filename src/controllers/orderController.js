@@ -40,6 +40,13 @@ export async function checkout(req, res) {
 }
 
 export async function listCustomerOrders(req, res) {
+  if (req.user.role === "customer") {
+    const { error: expiryError } = await supabase.rpc("expire_pending_online_orders", {
+      p_user_id: req.user.id
+    });
+    if (expiryError) console.error("EXPIRE CUSTOMER ORDERS ERROR:", expiryError);
+  }
+
   const page = Math.max(1, Number.parseInt(req.query.page || "1", 10));
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit || "20", 10)));
   let query = supabase
@@ -65,6 +72,13 @@ export async function listCustomerOrders(req, res) {
 }
 
 export async function getOrder(req, res) {
+  if (req.user.role === "customer") {
+    const { error: expiryError } = await supabase.rpc("expire_pending_online_orders", {
+      p_user_id: req.user.id
+    });
+    if (expiryError) console.error("EXPIRE CUSTOMER ORDER ERROR:", expiryError);
+  }
+
   let query = supabase
     .from("orders")
     .select("*,order_items(id,product_id,product_name,unit_price_centavos,quantity),payments(id,provider,status,amount_centavos,currency,checkout_url),order_status_history(id,from_status,to_status,actor_role,created_at)")
