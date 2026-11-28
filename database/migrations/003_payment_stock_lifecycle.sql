@@ -92,7 +92,10 @@ begin
     perform pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':' || p_idempotency_key, 0));
     select id into v_order_id
     from public.orders
-    where user_id = p_user_id and idempotency_key = p_idempotency_key
+    where user_id = p_user_id
+      and idempotency_key = p_idempotency_key
+      and status = 'pending_payment'
+      and expires_at > now()
     limit 1;
     if v_order_id is not null then
       return jsonb_build_object('order_id', v_order_id, 'reused', true);
